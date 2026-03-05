@@ -92,6 +92,18 @@ plugins = ["nonebot_plugin_trumpwatcher"]
 - [nonebot-plugin-orm](https://github.com/nonebot/plugin-orm) >= 0.8.0
 - [nonebot-plugin-apscheduler](https://github.com/nonebot/plugin-apscheduler) >= 0.4.0
 
+> **注意**: 本插件不指定 NoneBot2 驱动器依赖，请根据你的需求在主项目中配置驱动器。
+>
+> 例如，在 `.env` 文件中配置：
+> ```env
+> DRIVER=~fastapi+~httpx+~websockets
+> ```
+>
+> 并在主项目的 `pyproject.toml` 中安装对应的驱动器包（如果使用 poetry）：
+> ```bash
+> poetry add nonebot2[fastapi,websockets]
+> ```
+
 ## ⚙️ 配置
 
 在 NoneBot2 项目的 `.env` 文件中添加以下配置项（未配置则使用默认值）:
@@ -187,6 +199,15 @@ nb orm upgrade
 ## 📄 许可证
 
 本项目使用 [MIT](./LICENSE) 许可证。
+
+## 📦 发布信息
+
+- PyPI: https://pypi.org/project/nonebot-plugin-trumpwatcher/
+- GitHub: https://github.com/StuGRua/nonebot-plugin-trumpwatcher
+
+## 🔧 开发者须知
+
+如果你想参与开发或了解插件的最佳实践，请查看 [MAINTENANCE.md](./MAINTENANCE.md)。
 
 ## 🙏 致谢
 

@@ -3,7 +3,7 @@ name = "nonebot-plugin-trumpwatcher"
 version = "1.0.0"
 description = "监控特朗普 Truth Social 动态并推送到订阅群"
 authors = [
-    {name = "StuGRua", email = "stugd@example.com"},
+    {name = "StuGRua", email = "stug_iii@foxmail.com"},
 ]
 license = {text = "MIT"}
 readme = "README.md"
@@ -22,7 +22,7 @@ classifiers = [
 dependencies = [
     "nonebot2>=2.4.0",
     "nonebot-adapter-onebot>=2.4.0",
-    "nonebot-plugin-orm[default]>=0.8.0",
+    "nonebot-plugin-orm>=0.8.0",
     "nonebot-plugin-apscheduler>=0.4.0",
     "httpx>=0.27.0",
 ]
@@ -51,7 +51,7 @@ keywords = ["nonebot", "nonebot2", "trump", "truth-social", "monitor"]
 python = "^3.11"
 nonebot2 = "^2.4.0"
 nonebot-adapter-onebot = "^2.4.0"
-nonebot-plugin-orm = {extras = ["default"], version = "^0.8.0"}
+nonebot-plugin-orm = "^0.8.0"
 nonebot-plugin-apscheduler = "^0.4.0"
 httpx = "^0.27.0"
 
