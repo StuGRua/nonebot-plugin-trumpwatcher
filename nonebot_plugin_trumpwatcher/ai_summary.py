@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass
 from urllib.parse import urlparse
 from typing import Any
 
@@ -10,9 +12,22 @@ from .config import config
 from .data_source import TruthPost
 
 _SYSTEM_PROMPT = (
-    "你是新闻编辑助手。请把用户提供的特朗普 Truth Social 动态先翻译成简体中文，"
-    "再给出最多 3 条要点总结。输出要简洁、客观，不要编造信息。"
+    '你是新闻编辑助手。请把用户提供的特朗普 Truth Social 动态翻译成简体中文，'
+    '然后严格按以下格式输出（必须包含“标题：”和“概要：”两个标签）：\n\n'
+    '标题：<一句简洁标题，概括动态核心内容，不超过30字>\n'
+    '概要：<翻译原文并给出最多3条要点总结>\n\n'
+    '输出要简洁、客观，不要编造信息。'
 )
+
+_TITLE_PATTERN = re.compile(r"标题[：:][ \t]*(.+?)(?:\n|$)")
+_SUMMARY_PATTERN = re.compile(r"概要[：:]\s*(.+)", re.DOTALL)
+_MAX_RETRIES = 3
+
+
+@dataclass(slots=True)
+class AISummaryResult:
+    title: str
+    summary: str
 
 
 class _MultimodalNotSupportedError(Exception):
@@ -72,6 +87,18 @@ def _extract_content(payload: dict[str, Any]) -> str | None:
     return None
 
 
+def _parse_title_summary(text: str) -> AISummaryResult | None:
+    title_match = _TITLE_PATTERN.search(text)
+    summary_match = _SUMMARY_PATTERN.search(text)
+    if not title_match or not summary_match:
+        return None
+    title = title_match.group(1).strip()
+    summary = summary_match.group(1).strip()
+    if not title or not summary:
+        return None
+    return AISummaryResult(title=title, summary=summary)
+
+
 async def _request_summary(source_text: str, image_urls: list[str]) -> str | None:
     api_key = config.trumpwatcher_ai_api_key.strip()
     if not api_key:
@@ -105,7 +132,7 @@ async def _request_summary(source_text: str, image_urls: list[str]) -> str | Non
     return _extract_content(resp.json())
 
 
-async def summarize_post(post: TruthPost) -> str | None:
+async def summarize_post(post: TruthPost) -> AISummaryResult | None:
     api_key = config.trumpwatcher_ai_api_key.strip()
     if not api_key:
         return None
@@ -116,20 +143,33 @@ async def summarize_post(post: TruthPost) -> str | None:
 
     source_text = source_text[: config.trumpwatcher_ai_max_chars]
     image_urls = _collect_image_urls(post.media)
-    try:
-        content = await _request_summary(source_text, image_urls)
-    except _MultimodalNotSupportedError:
-        logger.warning("当前模型不支持图片输入，已降级为纯文本总结")
-        try:
-            content = await _request_summary(source_text, [])
-        except Exception:
-            logger.exception("AI 文本总结请求失败")
-            return None
-    except Exception:
-        logger.exception("AI 翻译总结请求失败")
-        return None
 
-    if not content:
-        logger.warning("AI 翻译总结返回为空")
-        return None
-    return f"AI翻译总结:\n{content}"
+    async def _attempt() -> AISummaryResult | None:
+        try:
+            raw = await _request_summary(source_text, image_urls)
+        except _MultimodalNotSupportedError:
+            logger.warning("当前模型不支持图片输入，已降级为纯文本总结")
+            try:
+                raw = await _request_summary(source_text, [])
+            except Exception:
+                logger.exception("AI 文本总结请求失败")
+                return None
+        except Exception:
+            logger.exception("AI 翻译总结请求失败")
+            return None
+        if not raw:
+            return None
+        return _parse_title_summary(raw)
+
+    for attempt in range(_MAX_RETRIES):
+        result = await _attempt()
+        if result is not None:
+            return result
+        if attempt < _MAX_RETRIES - 1:
+            logger.warning(f"AI 输出解析失败，正在重试 ({attempt + 2}/{_MAX_RETRIES})")
+
+    logger.warning(f"AI 输出解析失败已达 {_MAX_RETRIES} 次，降级为时间戳标题")
+    from datetime import timezone, timedelta
+
+    beijing_time = post.created_at.astimezone(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
+    return AISummaryResult(title=beijing_time, summary=source_text)

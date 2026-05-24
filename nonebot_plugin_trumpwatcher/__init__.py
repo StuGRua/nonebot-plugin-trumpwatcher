@@ -5,6 +5,7 @@ from contextlib import suppress
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import httpx
 from nonebot import get_bots, get_driver, logger, on_command, require
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageSegment
 from nonebot.adapters.onebot.v11.permission import GROUP_ADMIN, GROUP_OWNER
@@ -26,9 +27,10 @@ except Exception:
     JobLookupError = Exception
     scheduler = None
 
-from .ai_summary import summarize_post
+from .ai_summary import AISummaryResult, summarize_post
 from .config import Config, config
 from .data_source import (
+    BEIJING_TZ,
     TruthPost,
     fetch_archive_posts,
     filter_new_posts,
@@ -39,7 +41,13 @@ from .model import NotifyGroup, PostArchive
 __plugin_meta__ = PluginMetadata(
     name="特朗普社媒监控",
     description="监控特朗普 Truth Social 动态并推送到订阅群",
-    usage="trump社媒拉取 / trump社媒订阅 / trump社媒取消订阅",
+    usage=(
+        "trump社媒拉取 — 手动拉取最新动态\n"
+        "trump社媒订阅 — 订阅本群推送（需管理员）\n"
+        "trump社媒取消订阅 — 取消本群推送（需管理员）\n"
+        "trump社媒状态 — 查看当前群订阅状态\n"
+        "trump社媒订阅列表 — 查看所有订阅群（仅SUPERUSER）"
+    ),
     type="application",
     homepage="https://github.com/StuGRua/nonebot-plugin-trumpwatcher",
     config=Config,
@@ -65,6 +73,19 @@ unsubscribe_cmd = on_command(
     block=True,
     priority=10,
     permission=GROUP_ADMIN | GROUP_OWNER | SUPERUSER,
+)
+status_cmd = on_command(
+    "trump社媒状态",
+    aliases={"trump_status", "trumpwatcher_status"},
+    block=True,
+    priority=10,
+)
+list_cmd = on_command(
+    "trump社媒订阅列表",
+    aliases={"trump_list", "trumpwatcher_list"},
+    block=True,
+    priority=10,
+    permission=SUPERUSER,
 )
 
 _AUTO_FETCH_JOB_ID = "nonebot_plugin_trumpwatcher:auto_fetch"
@@ -149,9 +170,9 @@ async def _render_post_content(post: TruthPost, index: int) -> str:
         config.trumpwatcher_ai_summary_enabled
         and index < config.trumpwatcher_ai_summary_max_posts
     ):
-        ai_summary = await summarize_post(post)
-        if ai_summary:
-            return f"{content}\n\n{ai_summary}"
+        ai_result: AISummaryResult | None = await summarize_post(post)
+        if ai_result:
+            return f"{ai_result.title}\n\n{ai_result.summary}\n\n{content}"
     return content
 
 
@@ -159,9 +180,15 @@ async def _fetch_and_forward(bot: Bot, session: AsyncSession) -> str:
     async with _fetch_lock:
         try:
             posts = await fetch_archive_posts(limit=config.trumpwatcher_fetch_limit)
-        except Exception as exc:
+        except httpx.TimeoutException:
+            logger.warning("拉取特朗普社媒超时")
+            return "获取动态超时，请稍后再试。"
+        except httpx.HTTPStatusError:
+            logger.warning("拉取特朗普社媒数据源错误")
+            return "数据源暂时不可用，请稍后再试。"
+        except Exception:
             logger.exception("拉取特朗普社媒归档失败")
-            return f"拉取失败：{exc}"
+            return "获取动态失败，请稍后重试。"
 
         if not posts:
             return "未获取到可用动态。"
@@ -176,7 +203,10 @@ async def _fetch_and_forward(bot: Bot, session: AsyncSession) -> str:
             await session.scalar(select(func.max(PostArchive.created_at)))
         )
 
-        new_posts: list[TruthPost] = filter_new_posts(posts, archived_ids, latest_archived)
+        new_posts: list[TruthPost] = filter_new_posts(
+            posts, archived_ids, latest_archived,
+            skip_empty=config.trumpwatcher_skip_empty_content,
+        )
         if not new_posts:
             return "暂无新的特朗普社媒动态。"
 
@@ -197,21 +227,30 @@ async def _fetch_and_forward(bot: Bot, session: AsyncSession) -> str:
         except IntegrityError:
             await session.rollback()
             logger.warning("检测到并发拉取导致归档冲突")
-            return "检测到并发拉取冲突，请稍后重试。"
+            return "操作太频繁啦，请稍后再试。"
 
         group_ids_result = await session.execute(select(NotifyGroup.group_id))
         group_ids = list(group_ids_result.scalars().all())
         if not group_ids:
-            return f"已归档 {len(new_posts)} 条新动态，当前无订阅群。"
+            return f"已记录 {len(new_posts)} 条新动态，当前无订阅群。"
 
+        beijing_now = datetime.now(BEIJING_TZ).strftime("%m-%d %H:%M")
+        title = f"特朗普最新 {len(new_posts)} 条动态 | {beijing_now}"
         nodes = [
             MessageSegment.node_custom(
                 user_id=config.trumpwatcher_forward_user_id,
                 nickname=config.trumpwatcher_forward_nickname,
+                content=Message(MessageSegment.text(title)),
+            )
+        ]
+        nodes.extend(
+            MessageSegment.node_custom(
+                user_id=config.trumpwatcher_forward_user_id,
+                nickname=" ",
                 content=Message(MessageSegment.text(await _render_post_content(post, index))),
             )
             for index, post in enumerate(new_posts)
-        ]
+        )
 
         success_count = 0
         failed_groups: list[int] = []
@@ -280,3 +319,43 @@ async def handle_unsubscribe(event: GroupMessageEvent, session: AsyncSession) ->
     await session.delete(record)
     await session.commit()
     await unsubscribe_cmd.finish("已取消订阅。")
+
+
+@status_cmd.handle()
+async def handle_status(event: GroupMessageEvent, session: AsyncSession) -> None:
+    record = await session.get(NotifyGroup, event.group_id)
+    if record is None:
+        last_fetch = await session.scalar(select(func.max(PostArchive.fetched_at)))
+        last_str = (
+            last_fetch.astimezone(BEIJING_TZ).strftime("%m-%d %H:%M")
+            if last_fetch
+            else "暂无"
+        )
+        await status_cmd.finish(
+            f"当前群未订阅。\n上次全局拉取: {last_str}"
+        )
+    sub_time = record.created_at.astimezone(BEIJING_TZ).strftime("%m-%d %H:%M")
+    last_fetch = await session.scalar(select(func.max(PostArchive.fetched_at)))
+    last_str = (
+        last_fetch.astimezone(BEIJING_TZ).strftime("%m-%d %H:%M")
+        if last_fetch
+        else "暂无"
+    )
+    await status_cmd.finish(
+        f"已订阅特朗普社媒动态。\n订阅时间: {sub_time}\n上次拉取: {last_str}"
+    )
+
+
+@list_cmd.handle()
+async def handle_list(session: AsyncSession) -> None:
+    records_result = await session.execute(
+        select(NotifyGroup).order_by(NotifyGroup.created_at)
+    )
+    records = list(records_result.scalars().all())
+    if not records:
+        await list_cmd.finish("当前无任何群订阅。")
+    lines = [f"共 {len(records)} 个群订阅："]
+    for r in records:
+        t = r.created_at.astimezone(BEIJING_TZ).strftime("%m-%d %H:%M")
+        lines.append(f"  群 {r.group_id}（{t} 订阅）")
+    await list_cmd.finish("\n".join(lines))

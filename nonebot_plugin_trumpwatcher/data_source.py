@@ -81,6 +81,8 @@ def filter_new_posts(
     posts: Sequence[TruthPost],
     archived_ids: set[str],
     latest_archived: datetime | None,
+    *,
+    skip_empty: bool = False,
 ) -> list[TruthPost]:
     latest_utc = _normalize_utc(latest_archived) if latest_archived else None
     filtered: list[TruthPost] = []
@@ -93,15 +95,16 @@ def filter_new_posts(
             continue
         if latest_utc and post.created_at <= latest_utc:
             continue
+        if skip_empty and not post.content.strip() and not post.media:
+            continue
         filtered.append(post)
     return filtered
 
 
 def format_post_message(post: TruthPost) -> str:
-    lines = [f"特朗普Truth Social新动态:\n{post.content or '(无正文)'}"]
+    lines = [post.content or "(无正文)"]
     if post.media:
         lines.append("\n".join(post.media))
-    beijing_time = post.created_at.astimezone(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
-    lines.append(f"发布时间: {beijing_time}")
-    lines.append(f"动态链接: {post.url}")
+    beijing_time = post.created_at.astimezone(BEIJING_TZ).strftime("%m-%d %H:%M")
+    lines.append(f"🕐 {beijing_time}  🔗 {post.url}")
     return "\n".join(lines)

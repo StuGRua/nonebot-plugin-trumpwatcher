@@ -12,7 +12,6 @@ class Config(BaseModel):
     trumpwatcher_forward_nickname: str = Field(default="特朗普观察员")
     trumpwatcher_ai_summary_enabled: bool = Field(default=False)
     trumpwatcher_ai_summary_max_posts: int = Field(default=3, ge=0, le=100)
-    trumpwatcher_ai_provider: str = Field(default="qwen")
     trumpwatcher_ai_api_base: str = Field(
         default="https://dashscope.aliyuncs.com/compatible-mode/v1"
     )
@@ -26,6 +25,7 @@ class Config(BaseModel):
     trumpwatcher_auto_fetch_enabled: bool = Field(default=False)
     trumpwatcher_auto_fetch_cron: str = Field(default="*/10 * * * *")
     trumpwatcher_auto_fetch_timezone: str = Field(default="Asia/Shanghai")
+    trumpwatcher_skip_empty_content: bool = Field(default=True)
 
 
 config = get_plugin_config(Config)
