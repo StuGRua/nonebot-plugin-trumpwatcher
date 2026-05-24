@@ -124,7 +124,6 @@ plugins = ["nonebot_plugin_trumpwatcher"]
 | --- | --- | --- | --- |
 | `TRUMPWATCHER_AI_SUMMARY_ENABLED` | `bool` | `false` | 是否启用 AI 翻译总结 |
 | `TRUMPWATCHER_AI_SUMMARY_MAX_POSTS` | `int` | `3` | 每次拉取最多对前 N 条追加 AI 总结（0-100） |
-| `TRUMPWATCHER_AI_PROVIDER` | `str` | `qwen` | AI 服务提供方标识 |
 | `TRUMPWATCHER_AI_API_BASE` | `str` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | AI API Base URL |
 | `TRUMPWATCHER_AI_API_KEY` | `str` | `""` | AI API Key（开启 AI 时必填） |
 | `TRUMPWATCHER_AI_MODEL` | `str` | `qwen-plus` | AI 模型名 |
@@ -133,6 +132,12 @@ plugins = ["nonebot_plugin_trumpwatcher"]
 | `TRUMPWATCHER_AI_MAX_CHARS` | `int` | `2000` | 单条动态送入 AI 的最大字符数（200-20000） |
 | `TRUMPWATCHER_AI_MULTIMODAL_ENABLED` | `bool` | `true` | 是否启用图片多模态输入 |
 | `TRUMPWATCHER_AI_MULTIMODAL_MAX_IMAGES` | `int` | `3` | 单条动态最多传入的图片 URL 数量（0-10） |
+
+### 内容过滤配置
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `TRUMPWATCHER_SKIP_EMPTY_CONTENT` | `bool` | `true` | 是否跳过无正文且无图片的空白动态 |
 
 ### 自动推送配置
 
@@ -168,13 +173,17 @@ TRUMPWATCHER_AUTO_FETCH_CRON=*/5 * * * *
 | `trump社媒拉取` | `trump` / `trump_fetch` / `trumpwatcher_fetch` | 任意群成员 | 拉取最新动态、归档并推送到所有订阅群 |
 | `trump社媒订阅` | `trump_sub` / `trumpwatcher_sub` | 群管理员/群主/SUPERUSER | 当前群加入推送列表 |
 | `trump社媒取消订阅` | `trump_unsub` / `trumpwatcher_unsub` | 群管理员/群主/SUPERUSER | 当前群移出推送列表 |
+| `trump社媒状态` | `trump_status` / `trumpwatcher_status` | 任意群成员 | 查看当前群订阅状态和上次拉取时间 |
+| `trump社媒订阅列表` | `trump_list` / `trumpwatcher_list` | SUPERUSER | 查看所有订阅群列表 |
 
 ### 使用流程
 
 1. **订阅推送**: 在需要接收推送的群中发送 `trump社媒订阅`
-2. **手动拉取**: 发送 `trump社媒拉取` 立即拉取最新动态
-3. **自动推送**: 配置 `TRUMPWATCHER_AUTO_FETCH_ENABLED=true` 启用定时自动推送
-4. **取消订阅**: 发送 `trump社媒取消订阅` 停止接收推送
+2. **查看状态**: 发送 `trump社媒状态` 查看当前群订阅状态
+3. **管理订阅**: SUPERUSER 发送 `trump社媒订阅列表` 查看所有订阅群
+4. **手动拉取**: 发送 `trump社媒拉取` 立即拉取最新动态
+5. **自动推送**: 配置 `TRUMPWATCHER_AUTO_FETCH_ENABLED=true` 启用定时自动推送
+6. **取消订阅**: 发送 `trump社媒取消订阅` 停止接收推送
 
 ## 🔧 数据库迁移
 
@@ -191,10 +200,11 @@ nb orm upgrade
 ## 💡 AI 翻译总结说明
 
 - 默认使用千问（Qwen）兼容接口
-- 启用后会在转发内容后追加"AI翻译总结"
+- 启用后会在转发内容前插入 AI 生成的标题和概要
 - 支持多模态图片输入（需模型支持）
-- 如果模型不支持图片,会自动降级为纯文本总结
-- 请求失败时自动降级为仅发送原始消息,不影响主流程
+- 如果模型不支持图片，会自动降级为纯文本总结
+- AI 输出解析失败自动重试 3 次，仍失败则使用时间戳作为标题
+- 请求失败时自动降级为仅发送原始消息，不影响主流程
 
 ## 📄 许可证
 
