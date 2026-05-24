@@ -1,6 +1,6 @@
 [project]
 name = "nonebot-plugin-trumpwatcher"
-version = "1.0.3"
+version = "1.1.0"
 description = "监控特朗普 Truth Social 动态并推送到订阅群"
 authors = [
     {name = "StuGRua", email = "stug_iii@foxmail.com"},
@@ -41,7 +41,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "nonebot-plugin-trumpwatcher"
-version = "1.0.3"
+version = "1.1.0"
 description = "监控特朗普 Truth Social 动态并推送到订阅群"
 authors = ["StuGRua <stug_iii@foxmail.com>"]
 license = "MIT"
