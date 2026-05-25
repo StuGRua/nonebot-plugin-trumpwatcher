@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.1.1] - 2025-05-25
+
+### Fixed
+- `async_generator` 导致的定时拉取崩溃：`nodes.extend()` 内使用 `await` 生成器表达式被解析为异步生成器，改为显式 `for` 循环
+
 ## [1.1.0] - 2025-05-25
 
 ### Added

@@ -24,7 +24,13 @@ _ob_v11.permission = MagicMock()
 _ob_v11.permission.GROUP_ADMIN = MagicMock()
 _ob_v11.permission.GROUP_OWNER = MagicMock()
 
+from sqlalchemy.orm import DeclarativeBase
+
+class _FakeModel(DeclarativeBase):
+    __abstract__ = True
+
 _nb_orm = MagicMock()
+_nb_orm.Model = _FakeModel
 
 _nb_aps = MagicMock()
 _nb_aps.scheduler = MagicMock()

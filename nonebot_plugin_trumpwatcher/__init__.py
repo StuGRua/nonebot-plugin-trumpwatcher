@@ -243,14 +243,15 @@ async def _fetch_and_forward(bot: Bot, session: AsyncSession) -> str:
                 content=Message(MessageSegment.text(title)),
             )
         ]
-        nodes.extend(
-            MessageSegment.node_custom(
-                user_id=config.trumpwatcher_forward_user_id,
-                nickname=" ",
-                content=Message(MessageSegment.text(await _render_post_content(post, index))),
+        for index, post in enumerate(new_posts):
+            rendered = await _render_post_content(post, index)
+            nodes.append(
+                MessageSegment.node_custom(
+                    user_id=config.trumpwatcher_forward_user_id,
+                    nickname=" ",
+                    content=Message(MessageSegment.text(rendered)),
+                )
             )
-            for index, post in enumerate(new_posts)
-        )
 
         success_count = 0
         failed_groups: list[int] = []
